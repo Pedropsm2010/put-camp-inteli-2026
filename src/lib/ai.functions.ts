@@ -1,209 +1,103 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { generateText, Output } from "ai";
-import { createLovableAi, getLovableApiKey } from "./ai-gateway.server";
+import { getDb } from "./db.server";
+import { parseJson } from "./utils";
+import { simulateEvaluation, buildNotification } from "./evaluation";
+import { insertNotification } from "./db.server";
 
-const MODEL = "google/gemini-2.5-flash";
-
-function fmtApplication(app: Record<string, unknown>): string {
-  const job = (app.jobs ?? {}) as Record<string, unknown>;
-  const parts = [
-    `Vaga: ${job.title ?? "?"} (${job.area ?? "?"} · ${job.level ?? "-"})`,
-    `Requisitos: ${job.requirements ?? "-"}`,
-    `Skills desejadas: ${(job.desired_skills as string[] | undefined)?.join(", ") ?? "-"}`,
-    `Idiomas exigidos: ${(job.required_languages as string[] | undefined)?.join(", ") ?? "-"}`,
-    `Certificações exigidas: ${(job.required_certifications as string[] | undefined)?.join(", ") ?? "-"}`,
-    `Escolaridade mínima: ${job.min_education ?? "-"}`,
-    `Anos exp. mínimos: ${job.min_experience_years ?? 0}`,
-    "",
-    `Candidato: ${app.full_name}`,
-    `Localização: ${app.city ?? "-"}/${app.state ?? "-"}`,
-    `LinkedIn: ${app.linkedin ?? "-"}`,
-    `Formação: ${JSON.stringify(app.education ?? [])}`,
-    `Experiência: ${JSON.stringify(app.experience ?? [])}`,
-    `Idiomas: ${JSON.stringify(app.languages ?? [])}`,
-    `Certificações: ${JSON.stringify(app.certifications ?? [])}`,
-    `Respostas comportamentais: ${JSON.stringify(app.behavioral_answers ?? {})}`,
-  ];
-  return parts.join("\n");
-}
-
+// Avaliação simulada (POC local, sem IA real) — 3 agentes: cultura, técnica e média final.
 export const evaluateApplication = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((raw: unknown) => z.object({ id: z.string().uuid() }).parse(raw))
-  .handler(async ({ data, context }) => {
-    const { data: app, error } = await context.supabase
-      .from("applications")
-      .select("*, jobs(*)")
-      .eq("id", data.id)
-      .maybeSingle();
-    if (error) throw new Error(error.message);
+  .inputValidator(z.object({ id: z.string() }))
+  .handler(async ({ data }) => {
+    const db = getDb();
+    const app = db.prepare("SELECT * FROM applications WHERE id = ?").get(data.id) as Record<string, any> | undefined;
     if (!app) throw new Error("Candidato não encontrado");
+    const job = db.prepare("SELECT * FROM jobs WHERE id = ?").get(app.job_id) as Record<string, any> | undefined;
 
-    const provider = createLovableAi(getLovableApiKey());
-    const model = provider(MODEL);
-    const contexto = fmtApplication(app as Record<string, unknown>);
-
-    // Agente CULTURA AZUL
-    const culturaPrompt = `Você é o agente CULTURA AZUL, especializado em avaliar fit cultural de candidatos para a Azul Linhas Aéreas.
-Analise o candidato abaixo em 7 dimensões: Trabalho em equipe, Comunicação, Atendimento ao cliente, Adaptabilidade, Resolução de problemas, Segurança, Valores organizacionais.
-Considere que a Azul valoriza: paixão pelo cliente, gente que gosta de gente, segurança em primeiro lugar, simplicidade e inovação.
-Retorne uma nota de 0 a 100 e uma justificativa detalhada (máx. 180 palavras).
-
-===== DADOS DO CANDIDATO =====
-${contexto}`;
-
-    // Agente TÉCNICO
-    const tecnicoPrompt = `Você é o agente AVALIADOR TÉCNICO, especializado em avaliar competências técnicas para vagas da Azul Linhas Aéreas.
-Analise formação, certificações, experiência, conhecimentos técnicos, idiomas e requisitos específicos da vaga.
-Retorne uma nota de 0 a 100 e uma justificativa detalhada (máx. 180 palavras).
-
-===== DADOS DA VAGA + CANDIDATO =====
-${contexto}`;
-
-    const schema = z.object({
-      score: z.number().min(0).max(100),
-      justification: z.string(),
+    const beh = parseJson<{ summary?: string; questions?: Record<string, string> }>(app.behavioral_answers, {});
+    const result = simulateEvaluation({
+      full_name: String(app.full_name ?? ""),
+      city: app.city,
+      state: app.state,
+      linkedin: app.linkedin,
+      summary: beh.summary ?? null,
+      behavioral: beh.questions ?? null,
+      education: parseJson(app.education, []),
+      experience: parseJson(app.experience, []),
+      languages: parseJson(app.languages, []),
+      certifications: parseJson(app.certifications, []),
+      jobTitle: job?.title ? String(job.title) : undefined,
     });
 
-    const [culturaRes, tecnicaRes] = await Promise.all([
-      generateText({
-        model,
-        output: Output.object({ schema }),
-        prompt: culturaPrompt,
-      }),
-      generateText({
-        model,
-        output: Output.object({ schema }),
-        prompt: tecnicoPrompt,
-      }),
-    ]);
+    db.prepare(
+      `UPDATE applications
+       SET cultura_score = ?, tecnica_score = ?, fit_final = ?, fit_score = ?,
+           cultura_analysis = ?, tecnica_analysis = ?, summary_ai = ?, evaluated_at = ?, status = ?
+       WHERE id = ?`,
+    ).run(
+      result.cultura, result.tecnica, result.fitFinal, result.fitFinal,
+      JSON.stringify({ score: result.cultura, justification: result.culturaJustification }),
+      JSON.stringify({ score: result.tecnica, justification: result.tecnicaJustification }),
+      result.finalMessage, new Date().toISOString(), "reviewing", data.id,
+    );
 
-    const cultura = culturaRes.output;
-    const tecnica = tecnicaRes.output;
-    const fitFinal = Math.round(cultura.score * 0.4 + tecnica.score * 0.6);
-
-    // Resumo executivo curto
-    const resumoRes = await generateText({
-      model,
-      prompt: `Em no máximo 90 palavras, gere um resumo executivo do fit deste candidato para a vaga.
-Cultura: ${cultura.score}/100 — ${cultura.justification}
-Técnica: ${tecnica.score}/100 — ${tecnica.justification}
-Fit Final: ${fitFinal}/100.`,
+    const note = buildNotification({ full_name: String(app.full_name ?? "") }, result);
+    insertNotification({
+      title: `Avaliação concluída: ${app.full_name}`,
+      body: `${note.body} (${result.band.status})`,
+      link: `/candidatos/${data.id}`,
+      kind: "candidate_result",
     });
 
-    const { error: upErr } = await context.supabase
-      .from("applications")
-      .update({
-        cultura_score: cultura.score,
-        tecnica_score: tecnica.score,
-        fit_final: fitFinal,
-        fit_score: fitFinal,
-        cultura_analysis: cultura,
-        tecnica_analysis: tecnica,
-        summary_ai: resumoRes.text,
-        evaluated_at: new Date().toISOString(),
-        status: "reviewing",
-      })
-      .eq("id", data.id);
-    if (upErr) throw new Error(upErr.message);
-
-    return { cultura, tecnica, fitFinal, summary: resumoRes.text };
+    return { cultura: result.cultura, tecnica: result.tecnica, fitFinal: result.fitFinal, summary: result.finalMessage };
   });
 
+// Copiloto IA simulado (POC local).
 export const copilotoAsk = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((raw: unknown) =>
+  .inputValidator(
     z.object({
       question: z.string().min(2).max(600),
-      history: z
-        .array(z.object({ role: z.enum(["user", "assistant"]), content: z.string() }))
-        .default([]),
-    }).parse(raw),
+      history: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string() })).default([]),
+    }),
   )
-  .handler(async ({ data, context }) => {
-    // Contexto leve: últimas vagas e top candidatos avaliados
-    const [{ data: jobs }, { data: apps }] = await Promise.all([
-      context.supabase
-        .from("jobs")
-        .select("id, title, area, level, location, status, required_languages, required_certifications, desired_skills")
-        .order("created_at", { ascending: false })
-        .limit(30),
-      context.supabase
-        .from("applications")
-        .select("id, full_name, city, state, fit_final, cultura_score, tecnica_score, status, jobs(title, area), languages, certifications, experience")
-        .order("fit_final", { ascending: false, nullsFirst: false })
-        .limit(60),
-    ]);
-
-    const system = `Você é o COPILOTO IA da Azul Talent Hub — assistente conversacional para o time de RH da Azul Linhas Aéreas.
-Responda SEMPRE em português, de forma objetiva, executiva e amigável.
-Use APENAS os dados abaixo (banco atual da plataforma) para responder. Se não houver dado suficiente, diga que ainda não há candidatos suficientes com essa informação.
-
-===== VAGAS (${jobs?.length ?? 0}) =====
-${JSON.stringify(jobs ?? [], null, 0)}
-
-===== CANDIDATOS (${apps?.length ?? 0}) =====
-${JSON.stringify(apps ?? [], null, 0)}`;
-
-    const provider = createLovableAi(getLovableApiKey());
-    const model = provider(MODEL);
-    const result = await generateText({
-      model,
-      system,
-      messages: [
-        ...data.history.map((m) => ({ role: m.role, content: m.content })),
-        { role: "user" as const, content: data.question },
-      ],
-    });
-
-    return { answer: result.text };
+  .handler(async ({ data }) => {
+    const db = getDb();
+    const totalApps = (db.prepare("SELECT COUNT(*) c FROM applications").get() as { c: number }).c;
+    const openJobs = (db.prepare("SELECT COUNT(*) c FROM jobs WHERE status = 'open'").get() as { c: number }).c;
+    const evaluated = (db.prepare("SELECT COUNT(*) c FROM applications WHERE evaluated_at IS NOT NULL").get() as { c: number }).c;
+    const answer =
+      `Esta é uma resposta simulada do Copiloto IA (POC local, sem IA externa) para: "${data.question}".\n\n` +
+      `Resumo atual da plataforma: ${openJobs} vaga(s) aberta(s), ${totalApps} candidatura(s) e ${evaluated} avaliada(s) pela IA. ` +
+      `Posso ajudar com filtros de candidatos, resumos de vagas e sugestões de triagem.`;
+    return { answer };
   });
 
-export const generateExecutiveReport = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const [{ data: jobs, count: totalJobs }, { data: apps, count: totalApps }] = await Promise.all([
-      context.supabase.from("jobs").select("id, title, area, status, min_education", { count: "exact" }),
-      context.supabase
-        .from("applications")
-        .select("id, fit_final, cultura_score, tecnica_score, experience, education, languages, certifications, status, jobs(area)", { count: "exact" }),
-    ]);
+// Relatório executivo simulado (POC local).
+export const generateExecutiveReport = createServerFn({ method: "POST" }).handler(async () => {
+  const db = getDb();
+  const totalJobs = (db.prepare("SELECT COUNT(*) c FROM jobs").get() as { c: number }).c;
+  const openJobs = (db.prepare("SELECT COUNT(*) c FROM jobs WHERE status = 'open'").get() as { c: number }).c;
+  const totalApps = (db.prepare("SELECT COUNT(*) c FROM applications").get() as { c: number }).c;
+  const evaluated = (db.prepare("SELECT COUNT(*) c FROM applications WHERE evaluated_at IS NOT NULL").get() as { c: number }).c;
+  const avg = evaluated > 0
+    ? Math.round((db.prepare("SELECT AVG(fit_final) a FROM applications WHERE evaluated_at IS NOT NULL").get() as { a: number }).a)
+    : 0;
 
-    const evaluated = (apps ?? []).filter((a) => a.fit_final != null);
-    const media =
-      evaluated.length > 0
-        ? Math.round(evaluated.reduce((s, a) => s + (a.fit_final ?? 0), 0) / evaluated.length)
-        : 0;
+  const markdown = `# Relatório Executivo — Azul Talent (POC local)
 
-    const provider = createLovableAi(getLovableApiKey());
-    const model = provider(MODEL);
-    const prompt = `Você é um analista sênior de RH da Azul. Gere um relatório executivo em Markdown (headings, listas, sem tabelas complexas) com base nos dados abaixo. Seções obrigatórias:
-1. Visão geral
-2. Principais competências encontradas
-3. Distribuição de experiência
-4. Distribuição de escolaridade
-5. Recomendações práticas para entrevistas (bullet points)
+## Visão geral
+- Total de vagas: ${totalJobs} (${openJobs} abertas)
+- Total de candidaturas: ${totalApps}
+- Candidatos avaliados pela IA: ${evaluated}
+- Média Fit Azul: ${avg}/100
 
-Contexto:
-- Total vagas: ${totalJobs ?? 0}
-- Vagas abertas: ${(jobs ?? []).filter((j) => j.status === "open").length}
-- Total candidaturas: ${totalApps ?? 0}
-- Candidatos avaliados por IA: ${evaluated.length}
-- Média Fit Azul: ${media}/100
+## Principais competências encontradas
+Os perfis avaliados apresentam distribuição variada de fit cultural e técnico. Recomenda-se priorizar candidatos com nota final acima de 70%.
 
-Amostra (JSON): ${JSON.stringify((apps ?? []).slice(0, 40))}`;
+## Recomendações práticas
+- Revisar candidatos na faixa "Precisa de revisão humana" (60-69%).
+- Encaminhar os "Altamente recomendados" (80%+) ao RH.
+- Usar o Copiloto IA para triar grandes volumes.`;
 
-    const res = await generateText({ model, prompt });
-    return {
-      markdown: res.text,
-      stats: {
-        totalJobs: totalJobs ?? 0,
-        openJobs: (jobs ?? []).filter((j) => j.status === "open").length,
-        totalApps: totalApps ?? 0,
-        evaluated: evaluated.length,
-        avgFit: media,
-      },
-    };
-  });
+  return { markdown, stats: { totalJobs, openJobs, totalApps, evaluated, avgFit: avg } };
+});

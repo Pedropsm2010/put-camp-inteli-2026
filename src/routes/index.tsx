@@ -1,8 +1,9 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { Mail, Lock, ArrowRight, Sparkles, ShieldCheck, User } from "lucide-react";
+import { useServerFn } from "@tanstack/react-start";
+import { Mail, Lock, ArrowRight, Sparkles, ShieldCheck, User, Plane } from "lucide-react";
 import { useEffect, useState } from "react";
 import { BrandMark } from "@/components/BrandMark";
-import { supabase } from "@/integrations/supabase/client";
+import { login, signup } from "@/lib/auth.functions";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/")({
@@ -15,8 +16,13 @@ export const Route = createFileRoute("/")({
   component: LoginPage,
 });
 
+type UserType = "recruiter" | "candidate";
+
 function LoginPage() {
   const navigate = useNavigate();
+  const loginFn = useServerFn(login);
+  const signupFn = useServerFn(signup);
+  const [userType, setUserType] = useState<UserType>("recruiter");
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -25,34 +31,34 @@ function LoginPage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session) navigate({ to: "/dashboard" });
-    });
+    if (document.cookie.includes("azul_session=")) navigate({ to: "/dashboard" });
   }, [navigate]);
+
+  function setSession(userId: string) {
+    document.cookie = `azul_session=${userId}; path=/; max-age=2592000; samesite=lax`;
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     try {
+      let userId: string;
+      let createdRole: string | undefined;
       if (mode === "signup") {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            emailRedirectTo: `${window.location.origin}/dashboard`,
-            data: { full_name: fullName, role },
-          },
-        });
-        if (error) throw error;
+        const r = userType === "candidate" ? "candidate" : role;
+        const { user } = await signupFn({ data: { email, password, full_name: fullName, role: r } });
+        userId = user.id;
+        createdRole = r;
         toast.success("Conta criada com sucesso! Entrando...");
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
+        const { user } = await loginFn({ data: { email, password } });
+        userId = user.id;
+        createdRole = user.role;
       }
-      navigate({ to: "/dashboard" });
+      setSession(userId);
+      navigate({ to: createdRole === "candidate" ? "/candidato" : "/dashboard" });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Erro ao autenticar";
-      toast.error(msg.includes("Invalid login") ? "E-mail ou senha inválidos" : msg);
+      toast.error(err instanceof Error ? err.message : "Erro ao autenticar");
     } finally {
       setLoading(false);
     }
@@ -102,19 +108,38 @@ function LoginPage() {
           ))}
         </div>
 
-        <div className="relative text-xs text-white/50">© 2026 Azul Linhas Aéreas Brasileiras · Uso interno restrito</div>
+        <div className="relative text-xs text-white/50">© 2026 Azul Linhas Aéreas Brasileiras</div>
       </section>
 
       <section className="flex items-center justify-center p-6 sm:p-12">
         <div className="w-full max-w-md">
           <div className="lg:hidden mb-8"><BrandMark variant="dark" /></div>
+
+          <div className="flex rounded-2xl border border-border bg-card p-1 mb-6">
+            {(["recruiter", "candidate"] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => { setUserType(t); setMode("signin"); }}
+                className={`flex-1 flex items-center justify-center gap-2 h-10 rounded-xl text-sm font-semibold transition ${
+                  userType === t
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {t === "recruiter" ? <ShieldCheck className="size-4" /> : <Plane className="size-4" />}
+                {t === "recruiter" ? "Recrutador" : "Candidato"}
+              </button>
+            ))}
+          </div>
+
           <h1 className="text-4xl font-extrabold text-navy-deep">
             {mode === "signin" ? "Bem-vindo de volta" : "Crie sua conta"}
           </h1>
           <p className="mt-2 text-muted-foreground">
             {mode === "signin"
-              ? "Acesse seu painel de recrutamento."
-              : "Cadastre-se como recrutador Azul."}
+              ? userType === "candidate" ? "Acesse suas candidaturas." : "Acesse seu painel de recrutamento."
+              : userType === "candidate" ? "Cadastre-se e acompanhe suas candidaturas." : "Cadastre-se como recrutador Azul."}
           </p>
 
           <form onSubmit={handleSubmit} className="mt-8 space-y-5">
@@ -133,26 +158,28 @@ function LoginPage() {
                     />
                   </div>
                 </div>
-                <div>
-                  <label className="text-xs font-semibold tracking-[0.14em] uppercase text-muted-foreground">Perfil de acesso</label>
-                  <div className="mt-2 grid grid-cols-2 gap-2">
-                    {(["recruiter", "analyst"] as const).map((r) => (
-                      <button
-                        key={r}
-                        type="button"
-                        onClick={() => setRole(r)}
-                        className={`h-14 rounded-2xl border-2 font-semibold text-sm transition ${role === r ? "border-primary bg-primary/5 text-navy-deep" : "border-border bg-card text-muted-foreground hover:border-primary/40"}`}
-                      >
-                        {r === "recruiter" ? "Recrutador" : "Analista"}
-                      </button>
-                    ))}
+                {userType === "recruiter" && (
+                  <div>
+                    <label className="text-xs font-semibold tracking-[0.14em] uppercase text-muted-foreground">Perfil de acesso</label>
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      {(["recruiter", "analyst"] as const).map((r) => (
+                        <button
+                          key={r}
+                          type="button"
+                          onClick={() => setRole(r)}
+                          className={`h-14 rounded-2xl border-2 font-semibold text-sm transition ${role === r ? "border-primary bg-primary/5 text-navy-deep" : "border-border bg-card text-muted-foreground hover:border-primary/40"}`}
+                        >
+                          {r === "recruiter" ? "Recrutador" : "Analista"}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="mt-2 text-xs text-muted-foreground">Administradores são liberados manualmente pela equipe interna.</p>
                   </div>
-                  <p className="mt-2 text-xs text-muted-foreground">Administradores são liberados manualmente pela equipe interna.</p>
-                </div>
+                )}
               </>
             )}
             <div>
-              <label className="text-xs font-semibold tracking-[0.14em] uppercase text-muted-foreground">E-mail corporativo</label>
+              <label className="text-xs font-semibold tracking-[0.14em] uppercase text-muted-foreground">E-mail</label>
               <div className="mt-2 flex items-center gap-3 h-14 rounded-2xl border border-border bg-card px-4 focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/10 transition">
                 <Mail className="size-5 text-muted-foreground" />
                 <input
@@ -161,7 +188,7 @@ function LoginPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="flex-1 bg-transparent outline-none text-navy-deep"
-                  placeholder="voce@voeazul.com.br"
+                  placeholder={userType === "candidate" ? "seu@email.com" : "voce@voeazul.com.br"}
                 />
               </div>
             </div>
@@ -194,31 +221,16 @@ function LoginPage() {
               disabled={loading}
               className="w-full h-14 rounded-2xl bg-gradient-cta text-primary-foreground font-semibold flex items-center justify-center gap-2 hover:opacity-95 transition shadow-glow-blue disabled:opacity-60"
             >
-              {loading ? "Aguarde..." : mode === "signin" ? "Entrar na plataforma" : "Criar conta"}
+              {loading ? "Aguarde..." : mode === "signin" ? "Entrar" : "Criar conta"}
               <ArrowRight className="size-5" />
-            </button>
-
-            <div className="relative flex items-center gap-4 py-2">
-              <div className="flex-1 h-px bg-border" />
-              <span className="text-xs font-semibold text-muted-foreground tracking-widest">OU</span>
-              <div className="flex-1 h-px bg-border" />
-            </div>
-
-            <button
-              type="button"
-              disabled
-              className="w-full h-14 rounded-2xl border-2 border-border bg-card font-semibold text-muted-foreground flex items-center justify-center gap-2 cursor-not-allowed"
-            >
-              <ShieldCheck className="size-5 text-primary" />
-              SSO Azul (em breve)
             </button>
 
             <p className="text-center text-sm text-muted-foreground pt-2">
               {mode === "signin" ? (
                 <>
-                  Não tem acesso?{" "}
+                  {userType === "candidate" ? "Ainda não tem conta? " : "Não tem acesso? "}
                   <button type="button" onClick={() => setMode("signup")} className="font-semibold text-primary hover:underline">
-                    Solicitar cadastro
+                    {userType === "candidate" ? "Criar conta" : "Solicitar cadastro"}
                   </button>
                 </>
               ) : (

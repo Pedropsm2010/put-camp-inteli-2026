@@ -20,7 +20,9 @@ import { Route as AuthenticatedDashboardRouteImport } from './routes/_authentica
 import { Route as AuthenticatedCopilotoRouteImport } from './routes/_authenticated/copiloto'
 import { Route as AuthenticatedConfiguracoesRouteImport } from './routes/_authenticated/configuracoes'
 import { Route as AuthenticatedCandidatosRouteImport } from './routes/_authenticated/candidatos'
+import { Route as AuthenticatedCandidatoRouteImport } from './routes/_authenticated/candidato'
 import { Route as AuthenticatedCandidatosIdRouteImport } from './routes/_authenticated/candidatos.$id'
+import { Route as CandidaturaSlugResultadoAppIdRouteImport } from './routes/candidatura.$slug.resultado.$appId'
 import { Route as AuthenticatedCandidatosAvaliacaoIdRouteImport } from './routes/_authenticated/candidatos/avaliacao.$id'
 
 const EsqueciSenhaRoute = EsqueciSenhaRouteImport.update({
@@ -78,11 +80,22 @@ const AuthenticatedCandidatosRoute = AuthenticatedCandidatosRouteImport.update({
   path: '/candidatos',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedCandidatoRoute = AuthenticatedCandidatoRouteImport.update({
+  id: '/candidato',
+  path: '/candidato',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedCandidatosIdRoute =
   AuthenticatedCandidatosIdRouteImport.update({
     id: '/$id',
     path: '/$id',
     getParentRoute: () => AuthenticatedCandidatosRoute,
+  } as any)
+const CandidaturaSlugResultadoAppIdRoute =
+  CandidaturaSlugResultadoAppIdRouteImport.update({
+    id: '/candidatura/$slug/resultado/$appId',
+    path: '/candidatura/$slug/resultado/$appId',
+    getParentRoute: () => rootRouteImport,
   } as any)
 const AuthenticatedCandidatosAvaliacaoIdRoute =
   AuthenticatedCandidatosAvaliacaoIdRouteImport.update({
@@ -94,6 +107,7 @@ const AuthenticatedCandidatosAvaliacaoIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/esqueci-senha': typeof EsqueciSenhaRoute
+  '/candidato': typeof AuthenticatedCandidatoRoute
   '/candidatos': typeof AuthenticatedCandidatosRouteWithChildren
   '/configuracoes': typeof AuthenticatedConfiguracoesRoute
   '/copiloto': typeof AuthenticatedCopilotoRoute
@@ -104,10 +118,12 @@ export interface FileRoutesByFullPath {
   '/candidatar/$slug': typeof CandidatarSlugRoute
   '/candidatos/$id': typeof AuthenticatedCandidatosIdRoute
   '/candidatos/avaliacao/$id': typeof AuthenticatedCandidatosAvaliacaoIdRoute
+  '/candidatura/$slug/resultado/$appId': typeof CandidaturaSlugResultadoAppIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/esqueci-senha': typeof EsqueciSenhaRoute
+  '/candidato': typeof AuthenticatedCandidatoRoute
   '/candidatos': typeof AuthenticatedCandidatosRouteWithChildren
   '/configuracoes': typeof AuthenticatedConfiguracoesRoute
   '/copiloto': typeof AuthenticatedCopilotoRoute
@@ -118,12 +134,14 @@ export interface FileRoutesByTo {
   '/candidatar/$slug': typeof CandidatarSlugRoute
   '/candidatos/$id': typeof AuthenticatedCandidatosIdRoute
   '/candidatos/avaliacao/$id': typeof AuthenticatedCandidatosAvaliacaoIdRoute
+  '/candidatura/$slug/resultado/$appId': typeof CandidaturaSlugResultadoAppIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/esqueci-senha': typeof EsqueciSenhaRoute
+  '/_authenticated/candidato': typeof AuthenticatedCandidatoRoute
   '/_authenticated/candidatos': typeof AuthenticatedCandidatosRouteWithChildren
   '/_authenticated/configuracoes': typeof AuthenticatedConfiguracoesRoute
   '/_authenticated/copiloto': typeof AuthenticatedCopilotoRoute
@@ -134,12 +152,14 @@ export interface FileRoutesById {
   '/candidatar/$slug': typeof CandidatarSlugRoute
   '/_authenticated/candidatos/$id': typeof AuthenticatedCandidatosIdRoute
   '/_authenticated/candidatos/avaliacao/$id': typeof AuthenticatedCandidatosAvaliacaoIdRoute
+  '/candidatura/$slug/resultado/$appId': typeof CandidaturaSlugResultadoAppIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/esqueci-senha'
+    | '/candidato'
     | '/candidatos'
     | '/configuracoes'
     | '/copiloto'
@@ -150,10 +170,12 @@ export interface FileRouteTypes {
     | '/candidatar/$slug'
     | '/candidatos/$id'
     | '/candidatos/avaliacao/$id'
+    | '/candidatura/$slug/resultado/$appId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/esqueci-senha'
+    | '/candidato'
     | '/candidatos'
     | '/configuracoes'
     | '/copiloto'
@@ -164,11 +186,13 @@ export interface FileRouteTypes {
     | '/candidatar/$slug'
     | '/candidatos/$id'
     | '/candidatos/avaliacao/$id'
+    | '/candidatura/$slug/resultado/$appId'
   id:
     | '__root__'
     | '/'
     | '/_authenticated'
     | '/esqueci-senha'
+    | '/_authenticated/candidato'
     | '/_authenticated/candidatos'
     | '/_authenticated/configuracoes'
     | '/_authenticated/copiloto'
@@ -179,6 +203,7 @@ export interface FileRouteTypes {
     | '/candidatar/$slug'
     | '/_authenticated/candidatos/$id'
     | '/_authenticated/candidatos/avaliacao/$id'
+    | '/candidatura/$slug/resultado/$appId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -186,6 +211,7 @@ export interface RootRouteChildren {
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   EsqueciSenhaRoute: typeof EsqueciSenhaRoute
   CandidatarSlugRoute: typeof CandidatarSlugRoute
+  CandidaturaSlugResultadoAppIdRoute: typeof CandidaturaSlugResultadoAppIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -267,12 +293,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCandidatosRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/candidato': {
+      id: '/_authenticated/candidato'
+      path: '/candidato'
+      fullPath: '/candidato'
+      preLoaderRoute: typeof AuthenticatedCandidatoRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/candidatos/$id': {
       id: '/_authenticated/candidatos/$id'
       path: '/$id'
       fullPath: '/candidatos/$id'
       preLoaderRoute: typeof AuthenticatedCandidatosIdRouteImport
       parentRoute: typeof AuthenticatedCandidatosRoute
+    }
+    '/candidatura/$slug/resultado/$appId': {
+      id: '/candidatura/$slug/resultado/$appId'
+      path: '/candidatura/$slug/resultado/$appId'
+      fullPath: '/candidatura/$slug/resultado/$appId'
+      preLoaderRoute: typeof CandidaturaSlugResultadoAppIdRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_authenticated/candidatos/avaliacao/$id': {
       id: '/_authenticated/candidatos/avaliacao/$id'
@@ -302,6 +342,7 @@ const AuthenticatedCandidatosRouteWithChildren =
   )
 
 interface AuthenticatedRouteRouteChildren {
+  AuthenticatedCandidatoRoute: typeof AuthenticatedCandidatoRoute
   AuthenticatedCandidatosRoute: typeof AuthenticatedCandidatosRouteWithChildren
   AuthenticatedConfiguracoesRoute: typeof AuthenticatedConfiguracoesRoute
   AuthenticatedCopilotoRoute: typeof AuthenticatedCopilotoRoute
@@ -312,6 +353,7 @@ interface AuthenticatedRouteRouteChildren {
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedCandidatoRoute: AuthenticatedCandidatoRoute,
   AuthenticatedCandidatosRoute: AuthenticatedCandidatosRouteWithChildren,
   AuthenticatedConfiguracoesRoute: AuthenticatedConfiguracoesRoute,
   AuthenticatedCopilotoRoute: AuthenticatedCopilotoRoute,
@@ -329,6 +371,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   EsqueciSenhaRoute: EsqueciSenhaRoute,
   CandidatarSlugRoute: CandidatarSlugRoute,
+  CandidaturaSlugResultadoAppIdRoute: CandidaturaSlugResultadoAppIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

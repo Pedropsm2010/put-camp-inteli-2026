@@ -32,3 +32,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Banco local SQLite (POC)
+local.db
+local.db-wal
+local.db-shm
+.env
+.env.local

@@ -1,8 +1,19 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { Bell, CheckCheck, Trash2, Sparkles, UserPlus, Briefcase, FileText, X, CircleCheck } from "lucide-react";
+import {
+  Bell,
+  CheckCheck,
+  Trash2,
+  Sparkles,
+  UserPlus,
+  Briefcase,
+  FileText,
+  X,
+  CircleCheck,
+} from "lucide-react";
 import { toast } from "sonner";
+import type { LucideIcon } from "lucide-react";
 import {
   listNotifications,
   markNotificationRead,
@@ -10,10 +21,21 @@ import {
   clearNotifications,
 } from "@/lib/notifications.functions";
 
-const KIND_META: Record<string, { icon: any; tint: string }> = {
+type NotificationRow = {
+  id: string;
+  kind: string;
+  title: string;
+  body: string | null;
+  read_at: string | null;
+  created_at: string;
+  link: string | null;
+};
+
+const KIND_META: Record<string, { icon: LucideIcon; tint: string }> = {
   new_application: { icon: UserPlus, tint: "bg-sky text-white" },
   high_fit: { icon: Sparkles, tint: "bg-azul-yellow text-navy-deep" },
   ai_approved: { icon: CircleCheck, tint: "bg-success text-white" },
+  candidate_result: { icon: Sparkles, tint: "bg-azul-yellow text-navy-deep" },
   cv_received: { icon: FileText, tint: "bg-primary text-primary-foreground" },
   job_created: { icon: Briefcase, tint: "bg-primary text-primary-foreground" },
   job_closed: { icon: X, tint: "bg-muted text-navy-deep" },
@@ -27,7 +49,13 @@ function timeAgo(iso: string) {
   return `${Math.floor(s / 86400)}d`;
 }
 
-export function NotificationsPanel({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+export function NotificationsPanel({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+}) {
   const qc = useQueryClient();
   const listFn = useServerFn(listNotifications);
   const markFn = useServerFn(markNotificationRead);
@@ -41,9 +69,24 @@ export function NotificationsPanel({ open, onOpenChange }: { open: boolean; onOp
   });
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["notifications"] });
-  const mMark = useMutation({ mutationFn: (id: string) => markFn({ data: { id } }), onSuccess: invalidate });
-  const mMarkAll = useMutation({ mutationFn: () => markAllFn(), onSuccess: () => { invalidate(); toast.success("Todas marcadas como lidas"); } });
-  const mClear = useMutation({ mutationFn: () => clearFn(), onSuccess: () => { invalidate(); toast.success("Notificações limpas"); } });
+  const mMark = useMutation({
+    mutationFn: (id: string) => markFn({ data: { id } }),
+    onSuccess: invalidate,
+  });
+  const mMarkAll = useMutation({
+    mutationFn: () => markAllFn(),
+    onSuccess: () => {
+      invalidate();
+      toast.success("Todas marcadas como lidas");
+    },
+  });
+  const mClear = useMutation({
+    mutationFn: () => clearFn(),
+    onSuccess: () => {
+      invalidate();
+      toast.success("Notificações limpas");
+    },
+  });
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -76,7 +119,7 @@ export function NotificationsPanel({ open, onOpenChange }: { open: boolean; onOp
             </div>
           ) : (
             <ul className="divide-y divide-border">
-              {items.map((n: any) => {
+              {items.map((n: NotificationRow) => {
                 const meta = KIND_META[n.kind] ?? { icon: Bell, tint: "bg-muted text-navy-deep" };
                 const Icon = meta.icon;
                 const unread = !n.read_at;
@@ -86,16 +129,24 @@ export function NotificationsPanel({ open, onOpenChange }: { open: boolean; onOp
                     className={`px-5 py-4 flex gap-3 cursor-pointer hover:bg-primary/5 transition ${unread ? "bg-primary/[0.02]" : ""}`}
                     onClick={() => unread && mMark.mutate(n.id)}
                   >
-                    <div className={`size-9 rounded-xl grid place-items-center shrink-0 ${meta.tint}`}>
+                    <div
+                      className={`size-9 rounded-xl grid place-items-center shrink-0 ${meta.tint}`}
+                    >
                       <Icon className="size-4" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start gap-2">
                         <div className="text-sm font-semibold text-navy-deep flex-1">{n.title}</div>
-                        {unread && <span className="mt-1.5 size-2 rounded-full bg-azul-yellow shrink-0" />}
+                        {unread && (
+                          <span className="mt-1.5 size-2 rounded-full bg-azul-yellow shrink-0" />
+                        )}
                       </div>
-                      {n.body && <div className="text-xs text-muted-foreground mt-0.5">{n.body}</div>}
-                      <div className="text-[10px] text-muted-foreground mt-1.5 uppercase tracking-wide">{timeAgo(n.created_at)} atrás</div>
+                      {n.body && (
+                        <div className="text-xs text-muted-foreground mt-0.5">{n.body}</div>
+                      )}
+                      <div className="text-[10px] text-muted-foreground mt-1.5 uppercase tracking-wide">
+                        {timeAgo(n.created_at)} atrás
+                      </div>
                     </div>
                   </li>
                 );

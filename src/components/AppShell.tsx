@@ -5,9 +5,9 @@ import { Bell, LayoutDashboard, Briefcase, Users, Map, Settings, Search, LogOut,
 import { useState, type ReactNode } from "react";
 import { BrandMark } from "./BrandMark";
 import { NotificationsPanel } from "./NotificationsPanel";
-import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { listNotifications } from "@/lib/notifications.functions";
+import { getCurrentUser, logout } from "@/lib/auth.functions";
 
 const NAV = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -35,17 +35,13 @@ export function AppShell({
   const navigate = useNavigate();
   const [notifOpen, setNotifOpen] = useState(false);
 
+  const listNotifFn = useServerFn(listNotifications);
+  const meFn = useServerFn(getCurrentUser);
+  const logoutFn = useServerFn(logout);
   const { data: profile } = useQuery({
     queryKey: ["profile-me"],
-    queryFn: async () => {
-      const { data: u } = await supabase.auth.getUser();
-      if (!u.user) return null;
-      const { data } = await supabase.from("profiles").select("*").eq("id", u.user.id).maybeSingle();
-      return data ?? { full_name: u.user.email, email: u.user.email, job_title: "Recrutador(a)" };
-    },
+    queryFn: () => meFn(),
   });
-
-  const listNotifFn = useServerFn(listNotifications);
   const { data: notifs = [] } = useQuery({
     queryKey: ["notifications"],
     queryFn: () => listNotifFn(),
@@ -54,7 +50,8 @@ export function AppShell({
   const unread = (notifs as any[]).filter((n) => !n.read_at).length;
 
   async function handleLogout() {
-    await supabase.auth.signOut();
+    await logoutFn();
+    document.cookie = "azul_session=; path=/; max-age=0";
     toast.success("Sessão encerrada");
     navigate({ to: "/", replace: true });
   }
