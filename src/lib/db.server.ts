@@ -168,6 +168,12 @@ function seedIfEmpty(db: DatabaseSync) {
      VALUES (?, ?, ?, ?)`,
   ).run(userId, "azul", j({ cultura: 40, tecnica: 60 }), new Date().toISOString());
 
+  // Usuário candidato demo (login rápido na tela inicial)
+  db.prepare(
+    `INSERT INTO users (id, email, password_hash, full_name, job_title, role, company, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(newId(), "candidato@azul.com", hashPassword("azul1234"), "Ana Candidata", null, "candidate", null, new Date().toISOString());
+
   // Vagas
   const seedJobs: { id: string; title: string; area: string }[] = [];
   for (const job of JOB_AREAS) {
@@ -212,6 +218,23 @@ function seedIfEmpty(db: DatabaseSync) {
       "reviewing", new Date().toISOString(), new Date().toISOString(),
     );
   }
+
+  // Candidatura demo da Ana Candidata (para o login rápido "Entrar como Candidato")
+  const demoJob = seedJobs[1] ?? seedJobs[0];
+  db.prepare(
+    `INSERT INTO applications (id, job_id, full_name, email, phone, city, state, linkedin, behavioral_answers, education, experience, languages, certifications, cultura_score, tecnica_score, fit_final, fit_score, summary_ai, status, evaluated_at, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    newId(), demoJob.id, "Ana Candidata", "candidato@azul.com", "+55 11 99876-5432", "São Paulo", "SP", "https://linkedin.com/in/anacandidata",
+    j({ summary: `Profissional com 4 anos de experiência em ${demoJob.area.toLowerCase()} e paixão por aviação.` }),
+    j([{ level: "Superior", institution: "USP", field: demoJob.area }]),
+    j([{ role: `Profissional em ${demoJob.area}`, company: "Azul", years: 4 }]),
+    j([{ name: "Inglês", level: "Avançado" }]),
+    j([{ name: "IATA", issuer: "IATA" }]),
+    82, 77, 79, 79,
+    "Ana Candidata demonstra bom fit para a vaga, com destaque para comunicação e domínio técnico.",
+    "reviewing", new Date().toISOString(), new Date().toISOString(),
+  );
 
   // Notificações de exemplo
   const notifs = [

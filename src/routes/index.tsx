@@ -64,6 +64,23 @@ function LoginPage() {
     }
   }
 
+  async function handleDemoLogin(kind: "recruiter" | "candidate") {
+    setLoading(true);
+    try {
+      const creds =
+        kind === "recruiter"
+          ? { email: "rh@azul.com", password: "azul1234" }
+          : { email: "candidato@azul.com", password: "azul1234" };
+      const { user } = await loginFn({ data: creds });
+      setSession(user.id);
+      navigate({ to: kind === "recruiter" ? "/dashboard" : "/candidato" });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao autenticar");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <div className="min-h-screen grid lg:grid-cols-2 bg-background">
       <section className="relative hidden lg:flex flex-col justify-between p-12 bg-sky-lines text-white overflow-hidden">
@@ -141,6 +158,37 @@ function LoginPage() {
               ? userType === "candidate" ? "Acesse suas candidaturas." : "Acesse seu painel de recrutamento."
               : userType === "candidate" ? "Cadastre-se e acompanhe suas candidaturas." : "Cadastre-se como recrutador Azul."}
           </p>
+
+          {mode === "signin" && (
+            <div className="mt-6 rounded-2xl border border-dashed border-primary/30 bg-primary/5 p-4">
+              <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-primary">
+                <Sparkles className="size-3.5" /> Acesso rápido (demonstração)
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Esta é uma POC — entre direto, sem digitar credenciais.
+              </p>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  data-testid="demo-login-recruiter"
+                  disabled={loading}
+                  onClick={() => handleDemoLogin("recruiter")}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-primary text-sm font-semibold text-primary-foreground transition hover:opacity-90 disabled:opacity-60"
+                >
+                  <ShieldCheck className="size-4" /> Recrutador
+                </button>
+                <button
+                  type="button"
+                  data-testid="demo-login-candidate"
+                  disabled={loading}
+                  onClick={() => handleDemoLogin("candidate")}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-azul-yellow text-sm font-semibold text-navy-deep transition hover:opacity-90 disabled:opacity-60"
+                >
+                  <Plane className="size-4" /> Candidato
+                </button>
+              </div>
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="mt-8 space-y-5">
             {mode === "signup" && (

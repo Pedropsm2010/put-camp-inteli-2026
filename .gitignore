@@ -33,8 +33,7 @@ dist-ssr
 *.sln
 *.sw?
 
-# Banco local SQLite (POC)
-local.db
+# Banco local SQLite (POC) — local.db é versionado de propósito (dados de demo prontos, sem precisar reseed)
 local.db-wal
 local.db-shm
 .env
